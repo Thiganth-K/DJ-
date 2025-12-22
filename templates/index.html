@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DJ Cue Points</title>
+    <style>
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 24px; }
+      .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+      pre { background: #f6f8fa; padding: 12px; border-radius: 8px; overflow: auto; }
+      button { padding: 8px 12px; }
+    </style>
+  </head>
+  <body>
+    <h1>Upload MP3 → Cue Points</h1>
+
+    <form id="uploadForm" class="row">
+      <input id="fileInput" type="file" name="file" accept="audio/*" />
+      <button type="submit">Analyze</button>
+      <span id="status"></span>
+    </form>
+
+    <h2>Result</h2>
+    <pre id="output">(upload a file)</pre>
+
+    <script>
+      const form = document.getElementById('uploadForm');
+      const fileInput = document.getElementById('fileInput');
+      const statusEl = document.getElementById('status');
+      const outputEl = document.getElementById('output');
+
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        statusEl.textContent = '';
+        outputEl.textContent = '';
+
+        const file = fileInput.files && fileInput.files[0];
+        if (!file) {
+          statusEl.textContent = 'Choose a file first.';
+          outputEl.textContent = '(no file selected)';
+          return;
+        }
+
+        const fd = new FormData();
+        fd.append('file', file, file.name);
+
+        statusEl.textContent = 'Analyzing…';
+
+        try {
+          const res = await fetch('/analyze', { method: 'POST', body: fd });
+          const text = await res.text();
+
+          let payload;
+          try { payload = JSON.parse(text); }
+          catch { payload = { raw: text }; }
+
+          if (!res.ok) {
+            statusEl.textContent = 'Error';
+          } else {
+            statusEl.textContent = 'Done';
+          }
+
+          outputEl.textContent = JSON.stringify(payload, null, 2);
+        } catch (err) {
+          statusEl.textContent = 'Error';
+          outputEl.textContent = String(err);
+        }
+      });
+    </script>
+  </body>
+</html>
