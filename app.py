@@ -2,7 +2,6 @@
 from flask import Flask, request, jsonify, render_template
 import librosa
 import numpy as np
-import io
 import os
 import tempfile
 
@@ -45,7 +44,16 @@ def analyze():
             except OSError:
                 pass
 
-    # Beat tracking -> beatgrid [web:2][web:20]
+    phrase = request.args.get("phrase", "32")
+    try:
+        phrase = int(phrase)
+    except (TypeError, ValueError):
+        phrase = 32
+    phrase = max(1, min(256, phrase))
+
+    include_beats = request.args.get("include_beats", "0").strip().lower() in ("1", "true", "yes", "y")
+
+    # Beat tracking
     tempo, beat_frames = librosa.beat.beat_track(y=y, sr=sr)
     # librosa may return tempo as a numpy scalar/array depending on version
     if isinstance(tempo, np.ndarray):
@@ -53,29 +61,38 @@ def analyze():
     else:
         tempo = float(tempo)
 
-    beat_times = librosa.frames_to_time(beat_frames, sr=sr).tolist()
+    beat_frames = np.asarray(beat_frames, dtype=int)
 
-    # Simple phrase-based cue points
-    def pick_cues(beat_times, phrase=32):
-        n = len(beat_times)
+    # Simple phrase-based cue points (indices are beat indices)
+    def pick_cues(num_beats: int, phrase_len: int):
+        n = int(num_beats)
         idxs = [0]
-        if n > phrase: idxs.append(phrase)
-        if n > 2 * phrase: idxs.append(2 * phrase)
-        if n > 3 * phrase: idxs.append(3 * phrase)
-        if n > phrase: idxs.append(max(0, n - phrase))
+        if n > phrase_len:
+            idxs.append(phrase_len)
+        if n > 2 * phrase_len:
+            idxs.append(2 * phrase_len)
+        if n > 3 * phrase_len:
+            idxs.append(3 * phrase_len)
+        if n > phrase_len:
+            idxs.append(max(0, n - phrase_len))
         return sorted(set(i for i in idxs if i < n))
 
-    cue_indices = pick_cues(beat_times)
-    cue_times = [beat_times[i] for i in cue_indices]
+    cue_indices = pick_cues(len(beat_frames), phrase)
+    cue_frames = beat_frames[cue_indices] if len(cue_indices) else np.asarray([], dtype=int)
+    cue_times = librosa.frames_to_time(cue_frames, sr=sr).tolist()
 
-    return jsonify(
-        {
-            "tempo": tempo,
-            "beat_times": beat_times,
-            "cue_times": cue_times,
-            "cue_indices": cue_indices,
-        }
-    )
+    result = {
+        "tempo": tempo,
+        "num_beats": int(len(beat_frames)),
+        "phrase": phrase,
+        "cue_times": cue_times,
+        "cue_indices": cue_indices,
+    }
+
+    if include_beats:
+        result["beat_times"] = librosa.frames_to_time(beat_frames, sr=sr).tolist()
+
+    return jsonify(result)
 
 if __name__ == "__main__":
     app.run(debug=True)
