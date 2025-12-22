@@ -3,9 +3,8 @@
 Simple web tool to upload an audio file (e.g. `.mp3`) and extract beat-based cue points.
 
 What it returns (best-effort):
-- Estimated tempo
-- Beat count
-- Simple phrase-based cue points (e.g. every 32 beats + last phrase)
+- If the `.mp3` contains embedded markers: ID3 chapters (`CHAP`) and/or an embedded CUE sheet (fast; no audio decoding)
+- Otherwise: estimated tempo, beat count, and simple phrase-based cue points (slower)
 
 ## Run (Windows)
 
@@ -25,6 +24,10 @@ Open: http://127.0.0.1:5000
 Optional query params:
 - `phrase` (default `32`): phrase length in beats
 - `include_beats=1`: include full `beat_times` array in the response (slower / bigger payload)
+- `mode=auto|metadata|beats` (default `auto`):
+	- `auto`: try embedded metadata first, else fall back to beat-based
+	- `metadata`: only embedded metadata cues (returns empty if none)
+	- `beats`: always run beat-based cue extraction
 
 Response:
 
