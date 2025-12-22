@@ -3,31 +3,246 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>DJ Cue Points</title>
+    <title>DJ Cue Studio</title>
     <style>
-      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 24px; }
-      .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
-      pre { background: #f6f8fa; padding: 12px; border-radius: 8px; overflow: auto; }
-      button { padding: 8px 12px; }
+      :root {
+        color-scheme: light dark;
+        --bg: #f7fbff;
+        --fg: #0b1220;
+        --muted: #4a5a73;
+        --card: #ffffff;
+        --border: rgba(11, 18, 32, 0.12);
+        --accent: #1d4ed8;
+        --accent-2: #60a5fa;
+        --shadow: 0 10px 30px rgba(11, 18, 32, 0.12);
+        --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      }
+
+      html[data-theme="dark"] {
+        --bg: #070b14;
+        --fg: #eaf1ff;
+        --muted: #9bb2d6;
+        --card: #0e1424;
+        --border: rgba(234, 241, 255, 0.14);
+        --accent: #60a5fa;
+        --accent-2: #1d4ed8;
+        --shadow: 0 14px 40px rgba(0, 0, 0, 0.45);
+      }
+
+      * { box-sizing: border-box; }
+      body {
+        font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+      }
+
+      .container {
+        max-width: 920px;
+        margin: 0 auto;
+        padding: 28px 18px 48px;
+      }
+
+      .topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 18px;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        min-width: 0;
+      }
+
+      .logo {
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+        background: linear-gradient(135deg, var(--accent), var(--accent-2));
+        box-shadow: var(--shadow);
+        display: grid;
+        place-items: center;
+        flex: 0 0 auto;
+      }
+
+      .logo svg {
+        width: 22px;
+        height: 22px;
+        display: block;
+      }
+
+      h1 {
+        font-size: 20px;
+        margin: 0;
+        letter-spacing: 0.2px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .subtitle {
+        margin: 2px 0 0;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .theme-toggle {
+        border: 1px solid var(--border);
+        background: var(--card);
+        color: var(--fg);
+        padding: 8px 10px;
+        border-radius: 10px;
+        cursor: pointer;
+        font-weight: 600;
+      }
+
+      .card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        box-shadow: var(--shadow);
+        padding: 16px;
+      }
+
+      .row {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+
+      .hint {
+        color: var(--muted);
+        font-size: 13px;
+        margin: 10px 0 0;
+        line-height: 1.4;
+      }
+
+      input[type="file"] {
+        border: 1px dashed var(--border);
+        padding: 10px 12px;
+        border-radius: 12px;
+        background: transparent;
+        color: var(--fg);
+        min-width: 260px;
+      }
+
+      button[type="submit"] {
+        border: 1px solid rgba(255, 255, 255, 0.0);
+        background: linear-gradient(135deg, var(--accent), var(--accent-2));
+        color: white;
+        padding: 10px 14px;
+        border-radius: 12px;
+        cursor: pointer;
+        font-weight: 700;
+      }
+
+      button[disabled] {
+        opacity: 0.65;
+        cursor: not-allowed;
+      }
+
+      .status {
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      h2 {
+        margin: 18px 0 10px;
+        font-size: 14px;
+        color: var(--muted);
+        letter-spacing: 0.5px;
+        text-transform: uppercase;
+      }
+
+      pre {
+        background: rgba(11, 18, 32, 0.04);
+        border: 1px solid var(--border);
+        padding: 12px;
+        border-radius: 12px;
+        overflow: auto;
+        margin: 0;
+        font-family: var(--mono);
+        font-size: 12.5px;
+        line-height: 1.45;
+      }
+
+      html[data-theme="dark"] pre {
+        background: rgba(234, 241, 255, 0.06);
+      }
     </style>
   </head>
   <body>
-    <h1>Upload MP3 → Cue Points</h1>
+    <div class="container">
+      <div class="topbar">
+        <div class="brand">
+          <div class="logo" aria-hidden="true">
+            <!-- Simple "studio" symbol: dial + fader -->
+            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M12 3.5a8.5 8.5 0 1 0 8.5 8.5" stroke="white" stroke-width="2" stroke-linecap="round" />
+              <path d="M12 7.5v5l3.2 2" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+              <path d="M5 20h14" stroke="white" stroke-width="2" stroke-linecap="round" />
+              <path d="M9 20v-5" stroke="white" stroke-width="2" stroke-linecap="round" />
+              <path d="M15 20v-3" stroke="white" stroke-width="2" stroke-linecap="round" />
+            </svg>
+          </div>
+          <div>
+            <h1>DJ Cue Studio</h1>
+            <p class="subtitle">Upload an MP3 and get embedded cue markers (fast) or beat cues (fallback).</p>
+          </div>
+        </div>
+        <button id="themeToggle" class="theme-toggle" type="button">Theme</button>
+      </div>
 
-    <form id="uploadForm" class="row">
-      <input id="fileInput" type="file" name="file" accept="audio/*" />
-      <button type="submit">Analyze</button>
-      <span id="status"></span>
-    </form>
+      <div class="card">
+        <form id="uploadForm" class="row">
+          <input id="fileInput" type="file" name="file" accept="audio/*" />
+          <button id="analyzeBtn" type="submit">Analyze</button>
+          <span id="status" class="status"></span>
+        </form>
+        <p class="hint">
+          Tip: If your MP3 has ID3 chapters (CHAP) or an embedded CUE sheet, results return instantly.
+          Otherwise, beat-based cue points are computed.
+        </p>
+      </div>
 
-    <h2>Result</h2>
-    <pre id="output">(upload a file)</pre>
+      <h2>Result</h2>
+      <pre id="output">(upload a file)</pre>
+    </div>
 
     <script>
       const form = document.getElementById('uploadForm');
       const fileInput = document.getElementById('fileInput');
       const statusEl = document.getElementById('status');
       const outputEl = document.getElementById('output');
+      const analyzeBtn = document.getElementById('analyzeBtn');
+      const themeToggle = document.getElementById('themeToggle');
+
+      function applyTheme(theme) {
+        const t = theme === 'dark' ? 'dark' : 'light';
+        document.documentElement.setAttribute('data-theme', t);
+        themeToggle.textContent = t === 'dark' ? 'Dark' : 'Light';
+      }
+
+      // Default: follow system, but allow user override.
+      const storedTheme = localStorage.getItem('dj_theme');
+      if (storedTheme === 'light' || storedTheme === 'dark') {
+        applyTheme(storedTheme);
+      } else {
+        const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        applyTheme(prefersDark ? 'dark' : 'light');
+      }
+
+      themeToggle.addEventListener('click', () => {
+        const current = document.documentElement.getAttribute('data-theme') || 'light';
+        const next = current === 'dark' ? 'light' : 'dark';
+        localStorage.setItem('dj_theme', next);
+        applyTheme(next);
+      });
 
       form.addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -45,6 +260,7 @@
         fd.append('file', file, file.name);
 
         statusEl.textContent = 'Analyzing…';
+        analyzeBtn.disabled = true;
 
         try {
           const res = await fetch('/analyze', { method: 'POST', body: fd });
@@ -64,6 +280,8 @@
         } catch (err) {
           statusEl.textContent = 'Error';
           outputEl.textContent = String(err);
+        } finally {
+          analyzeBtn.disabled = false;
         }
       });
     </script>
