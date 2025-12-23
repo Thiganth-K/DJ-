@@ -115,6 +115,42 @@ def _extract_id3_chapters(id3: ID3):
     return cues
 
 
+def compute_cue_segments(cue_times, track_duration):
+    """
+    Compute start and end times for each cue segment.
+    
+    Args:
+        cue_times: List of cue point times in seconds
+        track_duration: Total track duration in seconds
+    
+    Returns:
+        List of dictionaries with cue number, start_time, and end_time
+    """
+    if not cue_times:
+        return []
+    
+    if track_duration <= 0:
+        return []
+    
+    segments = []
+    
+    for i, start_time in enumerate(cue_times):
+        # Determine end time
+        if i < len(cue_times) - 1:
+            end_time = cue_times[i + 1]
+        else:
+            # Last cue: use track duration
+            end_time = track_duration
+        
+        segments.append({
+            "cue": i + 1,
+            "start": round(float(start_time), 2),
+            "end": round(float(end_time), 2)
+        })
+    
+    return segments
+
+
 def extract_metadata_cues(file_path: str):
     # Returns [] if no usable metadata cues.
     try:
@@ -180,12 +216,20 @@ def analyze():
         if mode in ("auto", "metadata") and ext == ".mp3":
             metadata_cues = extract_metadata_cues(tmp_path)
             if metadata_cues:
+                cue_times = [c["start_seconds"] for c in metadata_cues]
+                # Need to load audio to get duration
+                y, sr = librosa.load(tmp_path, mono=True)
+                track_duration = librosa.get_duration(y=y, sr=sr)
+                segments = compute_cue_segments(cue_times, track_duration)
+                
                 return jsonify(
                     {
                         "mode": "metadata",
                         "cue_points": metadata_cues,
-                        "cue_times": [c["start_seconds"] for c in metadata_cues],
+                        "cue_times": cue_times,
                         "num_cue_points": int(len(metadata_cues)),
+                        "segments": segments,
+                        "track_duration": round(track_duration, 2)
                     }
                 )
 
@@ -244,6 +288,10 @@ def analyze():
     cue_indices = pick_cues(len(beat_frames), phrase)
     cue_frames = beat_frames[cue_indices] if len(cue_indices) else np.asarray([], dtype=int)
     cue_times = librosa.frames_to_time(cue_frames, sr=sr).tolist()
+    
+    # Calculate track duration and segments
+    track_duration = librosa.get_duration(y=y, sr=sr)
+    segments = compute_cue_segments(cue_times, track_duration)
 
     result = {
         "mode": "beats",
@@ -252,6 +300,8 @@ def analyze():
         "phrase": phrase,
         "cue_times": cue_times,
         "cue_indices": cue_indices,
+        "segments": segments,
+        "track_duration": round(track_duration, 2)
     }
 
     if include_beats:
