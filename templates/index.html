@@ -198,10 +198,20 @@
         <button id="themeToggle" class="theme-toggle" type="button">Theme</button>
       </div>
 
+      <div class="card" style="margin-top:12px;">
+        <form id="compareForm" class="row" onsubmit="return false;">
+          <input id="fileInput2" type="file" name="file2" accept="audio/*" />
+          <button id="compareBtn" type="button">Compare</button>
+          <span id="compareStatus" class="status"></span>
+        </form>
+        <p class="hint">Analyze a second file and compare cue times (start/pause/end) with the current result.</p>
+      </div>
+
       <div class="card">
         <form id="uploadForm" class="row">
           <input id="fileInput" type="file" name="file" accept="audio/*" />
           <button id="analyzeBtn" type="submit">Analyze</button>
+          <button id="saveBtn" type="button" disabled>Save</button>
           <span id="status" class="status"></span>
         </form>
         <p class="hint">
@@ -211,7 +221,29 @@
       </div>
 
       <h2>Result</h2>
+      <div class="card" style="display:grid; grid-template-columns: 1fr 1fr; gap:12px;">
+        <div>
+          <h3 style="margin:0 0 8px;">Song A (current)</h3>
+          <div id="songAList" class="card" style="min-height:72px; padding:10px;">(upload a file)</div>
+        </div>
+        <div>
+          <h3 style="margin:0 0 8px;">Song B (compare)</h3>
+          <div id="songBList" class="card" style="min-height:72px; padding:10px;">(no second song)</div>
+        </div>
+        <div style="grid-column: 1 / -1;">
+          <h3 style="margin:12px 0 8px;">Compared Cue Points</h3>
+          <div id="comparisonList" class="card" style="min-height:72px; padding:10px;">(no comparison)</div>
+        </div>
+      </div>
+
+      <h3 style="margin-top:12px;">Raw Result</h3>
       <pre id="output">(upload a file)</pre>
+
+      <h2>Saved Outputs</h2>
+      <div id="savedList" class="card" style="margin-top:10px; padding:10px;">
+        <div id="savedEmpty" class="status">(no saved outputs)</div>
+        <ul id="savedUl" style="margin:0; padding-left:18px;"></ul>
+      </div>
     </div>
 
     <script>
@@ -220,6 +252,10 @@
       const statusEl = document.getElementById('status');
       const outputEl = document.getElementById('output');
       const analyzeBtn = document.getElementById('analyzeBtn');
+      const saveBtn = document.getElementById('saveBtn');
+      const savedList = document.getElementById('savedList');
+      const savedUl = document.getElementById('savedUl');
+      const savedEmpty = document.getElementById('savedEmpty');
       const themeToggle = document.getElementById('themeToggle');
 
       function applyTheme(theme) {
@@ -243,6 +279,79 @@
         localStorage.setItem('dj_theme', next);
         applyTheme(next);
       });
+
+      // last result stored for saving
+      let lastResult = null;
+      let lastFilename = null;
+
+      // Convert cue_times array into labeled object: start, pause1, pause2..., end
+      function labelCueTimes(obj) {
+        try {
+          if (!obj || !Array.isArray(obj.cue_times)) return obj;
+          const times = obj.cue_times;
+          if (!times.length) return obj;
+          const named = {};
+          if (times.length === 1) {
+            named.start = times[0];
+            named.end = times[0];
+          } else {
+            named.start = times[0];
+            const middle = times.slice(1, -1);
+            middle.forEach((t, i) => { named['pause' + (i + 1)] = t; });
+            named.end = times[times.length - 1];
+          }
+          const copy = JSON.parse(JSON.stringify(obj));
+          copy.cue_times = named;
+          return copy;
+        } catch (e) {
+          return obj;
+        }
+      }
+
+      // Render helpers for visual editor
+      function renderCueList(container, labeledTimes) {
+        container.innerHTML = '';
+        if (!labeledTimes || typeof labeledTimes !== 'object') {
+          container.textContent = '(no cues)';
+          return;
+        }
+        const ul = document.createElement('ul');
+        ul.style.margin = '0';
+        ul.style.paddingLeft = '18px';
+        Object.keys(labeledTimes).forEach(k => {
+          const li = document.createElement('li');
+          li.textContent = `${k}: ${Number(labeledTimes[k]).toFixed(3)}s`;
+          ul.appendChild(li);
+        });
+        container.appendChild(ul);
+      }
+
+      function renderComparison(container, comp) {
+        container.innerHTML = '';
+        if (!comp || !comp.cues) {
+          container.textContent = '(no comparison)';
+          return;
+        }
+        const table = document.createElement('table');
+        table.style.width = '100%';
+        table.style.borderCollapse = 'collapse';
+        const thead = document.createElement('thead');
+        thead.innerHTML = '<tr><th style="text-align:left">Cue</th><th style="text-align:left">A (s)</th><th style="text-align:left">B (s)</th><th style="text-align:left">Δ (s)</th></tr>';
+        table.appendChild(thead);
+        const tbody = document.createElement('tbody');
+        Object.keys(comp.cues).forEach(k => {
+          const row = document.createElement('tr');
+          const va = comp.cues[k].a; const vb = comp.cues[k].b; const d = comp.cues[k].delta;
+          function td(txt) { const e = document.createElement('td'); e.textContent = (txt === null || typeof txt === 'undefined') ? '-' : (typeof txt === 'number' ? txt.toFixed(3) : String(txt)); e.style.padding = '6px 8px'; return e; }
+          row.appendChild(td(k));
+          row.appendChild(td(va));
+          row.appendChild(td(vb));
+          row.appendChild(td(d));
+          tbody.appendChild(row);
+        });
+        table.appendChild(tbody);
+        container.appendChild(table);
+      }
 
       form.addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -270,13 +379,31 @@
           try { payload = JSON.parse(text); }
           catch { payload = { raw: text }; }
 
+          payload = labelCueTimes(payload);
+
           if (!res.ok) {
             statusEl.textContent = 'Error';
+            lastResult = null;
+            saveBtn.disabled = true;
           } else {
             statusEl.textContent = 'Done';
+            lastResult = payload;
+            lastFilename = file.name || ('result-' + Date.now() + '.json');
+            saveBtn.disabled = false;
           }
 
+          // render raw JSON
           outputEl.textContent = JSON.stringify(payload, null, 2);
+
+          // render visual song A
+          const songAContainer = document.getElementById('songAList');
+          const songBContainer = document.getElementById('songBList');
+          const cmpContainer = document.getElementById('comparisonList');
+          // clear B and comparison on single analyze
+          songBContainer.textContent = '(no second song)';
+          cmpContainer.textContent = '(no comparison)';
+          const timesA = (payload.cue_times && typeof payload.cue_times === 'object') ? payload.cue_times : {};
+          renderCueList(songAContainer, timesA);
         } catch (err) {
           statusEl.textContent = 'Error';
           outputEl.textContent = String(err);
@@ -284,6 +411,175 @@
           analyzeBtn.disabled = false;
         }
       });
+
+        // Save button: download JSON and persist in localStorage + display in saved list
+        function loadSaved() {
+          try {
+            const raw = localStorage.getItem('dj_saved_outputs') || '[]';
+            const arr = JSON.parse(raw);
+            return Array.isArray(arr) ? arr : [];
+          } catch (e) {
+            return [];
+          }
+        }
+
+        function renderSaved() {
+          const arr = loadSaved();
+          savedUl.innerHTML = '';
+          if (!arr.length) {
+            savedEmpty.style.display = '';
+            return;
+          }
+          savedEmpty.style.display = 'none';
+          arr.slice().reverse().forEach((item, idx) => {
+            const li = document.createElement('li');
+            const t = new Date(item.ts).toLocaleString();
+
+            const view = document.createElement('a');
+            view.href = '#';
+            view.textContent = `${item.filename} — ${t}`;
+            view.style.cursor = 'pointer';
+            view.addEventListener('click', (ev) => {
+              ev.preventDefault();
+              outputEl.textContent = JSON.stringify(item.payload, null, 2);
+              statusEl.textContent = 'Loaded saved output';
+              saveBtn.disabled = false;
+              lastResult = item.payload;
+              lastFilename = item.filename;
+              // render visual Song A from saved payload
+              const songAContainer = document.getElementById('songAList');
+              const songBContainer = document.getElementById('songBList');
+              const cmpContainer = document.getElementById('comparisonList');
+              songBContainer.textContent = '(no second song)';
+              cmpContainer.textContent = '(no comparison)';
+              const timesA = (item.payload && item.payload.cue_times && typeof item.payload.cue_times === 'object') ? item.payload.cue_times : {};
+              renderCueList(songAContainer, timesA);
+            });
+
+            li.appendChild(view);
+            savedUl.appendChild(li);
+          });
+        }
+
+        saveBtn.addEventListener('click', () => {
+          if (!lastResult) return;
+          const ts = Date.now();
+          const filename = (lastFilename && lastFilename.replace(/\.[^.]+$/, '')) + '-' + ts + '.json';
+          // trigger download
+          const blob = new Blob([JSON.stringify(lastResult, null, 2)], { type: 'application/json' });
+          const a = document.createElement('a');
+          a.href = URL.createObjectURL(blob);
+          a.download = filename;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+
+          // persist
+          try {
+            const arr = loadSaved();
+            arr.push({ ts, filename, payload: lastResult });
+            localStorage.setItem('dj_saved_outputs', JSON.stringify(arr));
+            renderSaved();
+            statusEl.textContent = 'Saved locally';
+          } catch (e) {
+            statusEl.textContent = 'Save failed';
+          }
+        });
+
+        // populate saved list on load
+        renderSaved();
+
+        // Compare logic: analyze a second file and show labeled comparison
+        const compareForm = document.getElementById('compareForm');
+        const fileInput2 = document.getElementById('fileInput2');
+        const compareBtn = document.getElementById('compareBtn');
+        const compareStatus = document.getElementById('compareStatus');
+
+        async function analyzeFileBlob(fileBlob) {
+          const fd = new FormData();
+          fd.append('file', fileBlob, fileBlob.name || ('file-' + Date.now()));
+          const res = await fetch('/analyze', { method: 'POST', body: fd });
+          const text = await res.text();
+          let payload;
+          try { payload = JSON.parse(text); } catch { payload = { raw: text }; }
+          // normalize cue_times to labeled form for consistency
+          try { payload = labelCueTimes(payload); } catch (e) { /* ignore */ }
+          return { ok: res.ok, payload };
+        }
+
+        function unionKeys(a, b) {
+          const s = new Set();
+          if (a && typeof a === 'object') Object.keys(a).forEach(k => s.add(k));
+          if (b && typeof b === 'object') Object.keys(b).forEach(k => s.add(k));
+          return Array.from(s);
+        }
+
+        compareBtn.addEventListener('click', async () => {
+          compareStatus.textContent = '';
+          if (!lastResult) {
+            compareStatus.textContent = 'Analyze the first file first.';
+            return;
+          }
+          const f2 = fileInput2.files && fileInput2.files[0];
+          if (!f2) {
+            compareStatus.textContent = 'Choose a second file.';
+            return;
+          }
+
+          compareBtn.disabled = true;
+          compareStatus.textContent = 'Analyzing second file…';
+
+          try {
+            const r2 = await analyzeFileBlob(f2);
+            if (!r2.ok) {
+              compareStatus.textContent = 'Error analyzing second file';
+              return;
+            }
+
+            // normalize both payloads to labeled cue_times
+            const a = lastResult || {};
+            const b = r2.payload || {};
+            const payloadA = labelCueTimes(a);
+            const payloadB = labelCueTimes(b);
+
+            const aTimes = payloadA.cue_times || {};
+            const bTimes = payloadB.cue_times || {};
+
+            // build comparison
+            const keys = unionKeys(aTimes, bTimes);
+            const comparison = { meta: { fileA: lastFilename || 'A', fileB: f2.name || 'B' }, cues: {}, tempo: {} };
+
+            keys.forEach(k => {
+              const va = (k in aTimes) ? aTimes[k] : null;
+              const vb = (k in bTimes) ? bTimes[k] : null;
+              const delta = (va != null && vb != null) ? Math.abs(Number(va) - Number(vb)) : null;
+              comparison.cues[k] = { a: va, b: vb, delta };
+            });
+
+            // tempo comparison if available
+            const ta = (typeof a.tempo !== 'undefined') ? Number(a.tempo) : null;
+            const tb = (typeof b.tempo !== 'undefined') ? Number(b.tempo) : null;
+            comparison.tempo = { a: ta, b: tb, delta: (ta != null && tb != null) ? Math.abs(ta - tb) : null };
+
+            // render visual Song B and comparison
+            const songAContainer = document.getElementById('songAList');
+            const songBContainer = document.getElementById('songBList');
+            const cmpContainer = document.getElementById('comparisonList');
+            renderCueList(songAContainer, aTimes);
+            renderCueList(songBContainer, bTimes);
+            renderComparison(cmpContainer, comparison);
+
+            // also include raw combined JSON for advanced users
+            const out = { comparison, a: payloadA, b: payloadB };
+            outputEl.textContent = JSON.stringify(out, null, 2);
+            statusEl.textContent = 'Comparison ready';
+            compareStatus.textContent = '';
+          } catch (err) {
+            compareStatus.textContent = 'Error: ' + String(err);
+          } finally {
+            compareBtn.disabled = false;
+          }
+        });
     </script>
   </body>
 </html>
