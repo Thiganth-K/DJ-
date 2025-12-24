@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import re
 from typing import Any
+import json
 
 
 @dataclass(frozen=True)
@@ -309,3 +310,111 @@ def extract_cue_points_from_mp3(file_path: str) -> list[CuePoint]:
             deduped.append(c)
 
     return deduped
+
+
+@dataclass(frozen=True)
+class ClueGroup:
+    """A grouped set of cue points represented as a single clue point.
+
+    - `titles`: list of member cue titles (in order)
+    - `start_seconds`: start time of the first member
+    - `end_seconds`: start time of the last member
+    - `sources`: list of sources for the member cues
+    """
+    titles: list[str]
+    start_seconds: float
+    end_seconds: float
+    sources: list[str]
+
+
+def group_cue_points(cue_points: list[CuePoint], max_gap_seconds: float = 30.0) -> list[ClueGroup]:
+    """Group adjacent cue points into clue points.
+
+    Two cue points are placed in the same group when the gap between their
+    start times is <= `max_gap_seconds`. Returns a list of `ClueGroup` in
+    chronological order.
+    """
+    if not cue_points:
+        return []
+
+    sorted_points = sorted(cue_points, key=lambda c: c.start_seconds)
+    groups: list[ClueGroup] = []
+    current: list[CuePoint] = [sorted_points[0]]
+
+    for cp in sorted_points[1:]:
+        if cp.start_seconds - current[-1].start_seconds <= max_gap_seconds:
+            current.append(cp)
+        else:
+            groups.append(
+                ClueGroup(
+                    titles=[c.title for c in current],
+                    start_seconds=current[0].start_seconds,
+                    end_seconds=current[-1].start_seconds,
+                    sources=[c.source for c in current],
+                )
+            )
+            current = [cp]
+
+    # final group
+    groups.append(
+        ClueGroup(
+            titles=[c.title for c in current],
+            start_seconds=current[0].start_seconds,
+            end_seconds=current[-1].start_seconds,
+            sources=[c.source for c in current],
+        )
+    )
+
+    return groups
+
+
+def format_clue_groups(groups: list[ClueGroup]) -> list[dict]:
+    """Return a serializable representation of clue groups.
+
+    Each entry contains `title` (joined titles), `start_seconds`, `end_seconds`,
+    and `members` (original titles).
+    """
+    out: list[dict] = []
+    for g in groups:
+        joined_title = " / ".join(t for t in g.titles if t and t.strip()) or "Clue"
+        out.append(
+            {
+                "title": joined_title,
+                "start_seconds": g.start_seconds,
+                "end_seconds": g.end_seconds,
+                "members": g.titles,
+                "sources": g.sources,
+            }
+        )
+    return out
+
+
+def build_clues_json(cue_points: list[CuePoint], max_gap_seconds: float = 30.0) -> str:
+    """Return a JSON string containing both raw cue points and grouped clue points.
+
+    The returned JSON has two keys:
+    - `cue_points`: list of individual cues with `title`, `start_seconds`, and `source`.
+    - `clue_points`: list of grouped clue points (see `format_clue_groups` output).
+    """
+    groups = group_cue_points(cue_points, max_gap_seconds=max_gap_seconds)
+
+    raw_cues = [
+        {"title": c.title, "start_seconds": c.start_seconds, "source": c.source}
+        for c in sorted(cue_points, key=lambda c: c.start_seconds)
+    ]
+
+    clue_points = format_clue_groups(groups)
+
+    payload = {"cue_points": raw_cues, "clue_points": clue_points}
+    return json.dumps(payload, indent=2, ensure_ascii=False)
+
+
+def build_clue_points_json(cue_points: list[CuePoint], max_gap_seconds: float = 30.0) -> str:
+    """Return a JSON string containing only grouped clue points.
+
+    Output is a JSON array of clue point objects (same structure as
+    `format_clue_groups` entries).
+    """
+    groups = group_cue_points(cue_points, max_gap_seconds=max_gap_seconds)
+    clue_points = format_clue_groups(groups)
+    return json.dumps(clue_points, indent=2, ensure_ascii=False)
